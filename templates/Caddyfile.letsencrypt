@@ -1,0 +1,82 @@
+# golive: Caddy without Cloudflare. Caddy obtains and renews Let's Encrypt certificates itself:
+# ports 80 and 443 must be open to everyone and the A/AAAA records must point here before the first start.
+# Placeholders the tls skill replaces:
+#   __DOMAIN__          the bare domain, e.g. example.com
+#   __ACME_EMAIL__      contact address for Let's Encrypt
+#   __CANONICAL_HOST__  __DOMAIN__ (apex) or www.__DOMAIN__ (profile.app_shape.canonical_host)
+#   __ALT_HOST__        the other one; it redirects to canonical
+# No trusted_proxies here: without Cloudflare, visitors connect directly and Caddy already sees their real IP.
+# (If another proxy/CDN sits in front, add `servers { trusted_proxies static <its ranges> ; client_ip_headers X-Forwarded-For }`; verify with caddy validate.)
+# One server runs one environment: keep the staging block on the staging server, the production blocks on prod.
+# Always run `caddy validate --config /etc/caddy/Caddyfile` after editing.
+{
+	email __ACME_EMAIL__
+	servers {
+		metrics
+	}
+}
+
+(common) {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+}
+
+# Private metrics endpoint for Prometheus (compose.caddy.yaml publishes 9180 on the private IP only)
+http://:9180 {
+	metrics
+}
+
+__ALT_HOST__ {
+	import common
+	redir https://__CANONICAL_HOST__{uri} permanent
+}
+
+__CANONICAL_HOST__ {
+	import common
+
+	handle /api/* {
+		# request_body {
+		# 	max_size 50MB
+		# }
+		reverse_proxy api:8000
+	}
+
+	# Websockets work through reverse_proxy automatically; for long-lived sockets:
+	# handle /ws/* {
+	# 	reverse_proxy api:8000 {
+	# 		flush_interval -1
+	# 		transport http {
+	# 			read_timeout 1h
+	# 		}
+	# 	}
+	# }
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Staging without Cloudflare Access: basic auth (hash with `caddy hash-password`) and noindex.
+staging.__DOMAIN__ {
+	import common
+	header X-Robots-Tag "noindex, nofollow"
+	basic_auth {
+		__STAGING_USER__ __STAGING_PASSWORD_HASH__
+	}
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

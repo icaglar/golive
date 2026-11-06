@@ -1,0 +1,76 @@
+{
+  "name": "golive",
+  "displayName": "Go-live",
+  "version": "1.0.0",
+  "description": "Takes an app from repo to production without the chores, with the providers you choose: domain (Porkbun, Namecheap, Cloudflare or any registrar), DNS (Cloudflare or your own), servers (Hetzner, DigitalOcean, Vultr, Linode, AWS Lightsail, Scaleway or an existing VPS), staging and prod on Docker Compose or Kubernetes, TLS, PostgreSQL/MySQL with encrypted backups, migration of an existing live app, transactional mail (Resend, Postmark, Mailgun, SES, Brevo), monitoring, CI/CD where production only changes through a confirmed release, and a legal checklist for your users' jurisdictions (GDPR, CCPA, LGPD, KVKK, ...). Shows a status board with a running cost total after every step and asks before anything that costs money or deletes infrastructure.",
+  "author": {
+    "name": "İbrahim"
+  },
+  "homepage": "https://github.com/icaglar/golive",
+  "repository": "https://github.com/icaglar/golive",
+  "license": "MIT",
+  "keywords": [
+    "cloudflare",
+    "deploy",
+    "dkim",
+    "dmarc",
+    "dns",
+    "domain",
+    "gdpr",
+    "github",
+    "go-live",
+    "grafana",
+    "hetzner",
+    "k3s",
+    "kubernetes",
+    "kvkk",
+    "monitoring",
+    "porkbun",
+    "postgresql",
+    "privacy",
+    "production",
+    "prometheus",
+    "resend",
+    "smtp",
+    "spf",
+    "staging"
+  ],
+  "userConfig": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub token (for the GitHub MCP)",
+      "description": "Fine-grained personal access token for your app repositories: Metadata read, Contents read, Actions read and write. Add Administration read and write only if golive should create repositories. GitHub's remote MCP server needs a token in Claude Code. Leave empty to skip the GitHub MCP (then turn it off in /mcp); the gh CLI still works.",
+      "sensitive": true,
+      "required": false
+    },
+    "guard": {
+      "type": "boolean",
+      "title": "Ask before costly or destructive actions",
+      "description": "Before domain purchases, renewals, transfers, billable server resources, deletions, firewall rule replacements and DNS record deletions, Claude Code asks for your confirmation.",
+      "default": true
+    },
+    "language": {
+      "type": "string",
+      "title": "Status board language",
+      "description": "Language of the go-live status board shown after each step.",
+      "options": [
+        "en",
+        "tr"
+      ],
+      "default": "en"
+    },
+    "default_company_country": {
+      "type": "string",
+      "title": "Default company country",
+      "description": "Where your company (the data controller) is usually established, e.g. TR, DE, US. New projects get it as the suggested answer; each project can still change it.",
+      "default": ""
+    },
+    "default_user_regions": {
+      "type": "string",
+      "title": "Default user regions",
+      "description": "Where your users usually are, comma-separated: eu, uk, us, ca, br, tr, other. New projects get it as the suggested answer; each project can still change it.",
+      "default": ""
+    }
+  },
+  "privacyPolicyUrl": "https://github.com/icaglar/golive#privacy"
+}

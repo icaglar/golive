@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: web}
+  template:
+    metadata:
+      labels: {app: web}
+    spec:
+      imagePullSecrets:
+        - name: ghcr
+      containers:
+        - name: web
+          image: ghcr.io/OWNER/REPO-web:sha-PLACEHOLDER   # the overlays pin sha-<commit>; release.yml updates them
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef: {name: app-env}
+          readinessProbe:
+            httpGet: {path: /, port: 3000}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector: {app: web}
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  # TLS mode B (no Cloudflare): cert-manager issues the certificate. Uncomment the annotation and use
+  # secretName web-tls below (cert-manager creates that secret). Use letsencrypt-staging while testing
+  # (rate limits), letsencrypt-prod once it works. Issuers: templates/k8s/cert-manager/clusterissuer.yaml
+  # annotations:
+  #   cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [HOST]
+      # TLS mode A (Cloudflare proxied): secret "origin-cert" holds the Cloudflare Origin CA certificate,
+      # created by the cluster skill (kubectl create secret tls ... from files, never committed to git).
+      # TLS mode B (cert-manager): change this to web-tls and uncomment the annotation above.
+      secretName: origin-cert
+  rules:
+    - host: HOST
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: web, port: {number: 80}}

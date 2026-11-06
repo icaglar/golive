@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "cloudflare": {
+      "type": "http",
+      "url": "https://mcp.cloudflare.com/mcp"
+    },
+    "porkbun": {
+      "type": "http",
+      "url": "https://mcp.porkbun.com/mcp"
+    },
+    "namecheap": {
+      "type": "http",
+      "url": "https://mcp.namecheap.com/mcp"
+    },
+    "resend": {
+      "type": "http",
+      "url": "https://mcp.resend.com/mcp"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${user_config.github_token}",
+        "X-MCP-Toolsets": "repos,actions"
+      }
+    }
+  }
+}

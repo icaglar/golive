@@ -1,0 +1,20 @@
+# golive: PRODUCTION override. Layered over compose.yaml by setting, in this server's /srv/app/.env:
+#   APP_ENV=prod
+#   COMPOSE_FILE=compose.yaml:compose.prod.yaml
+# (docker compose reads COMPOSE_FILE from .env, so the pull unit and every manual `docker compose` call use both files.)
+# Production has NO db service: it uses the dedicated database server over the private network
+# (DATABASE_URL in .env points at the DB server's private IP, with sslmode as the database skill decides).
+# If compose.yaml defines a `db` service, keep it out of prod with a profile there (profiles: ["staging"]) or delete it.
+# Memory limits (mem_limit) protect the host: size them so the sum stays under ~75% of RAM; tune after a week of data.
+# Service names (api, web, worker, caddy) must match compose.yaml; delete the ones the app does not have.
+services:
+  api:
+    mem_limit: 1g
+    restart: unless-stopped
+  web:
+    mem_limit: 512m
+    restart: unless-stopped
+  # worker:
+  #   mem_limit: 512m
+  caddy:
+    mem_limit: 256m

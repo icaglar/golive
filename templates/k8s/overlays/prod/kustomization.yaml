@@ -1,0 +1,21 @@
+# golive overlay: prod. release.yml pins images[].newTag to sha-<commit>; Flux applies it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/OWNER/REPO-web
+    newTag: sha-PLACEHOLDER   # release.yml pins sha-<commit>; never staging|prod
+replicas:
+  - name: web
+    count: 2
+patches:
+  - target: {kind: Ingress, name: web}
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: example.com
+      - op: replace
+        path: /spec/rules/0/host
+        value: example.com

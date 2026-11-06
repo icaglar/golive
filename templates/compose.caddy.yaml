@@ -1,0 +1,21 @@
+# golive: add this service to the app's docker compose file (or include it).
+# Only Caddy publishes public ports; app and database containers stay on the internal network.
+# Docker-published ports bypass ufw, so never publish database ports.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      # Caddy metrics for Prometheus, private IP only (__PRIVATE_IP__ = this server's golive-net address)
+      - "__PRIVATE_IP__:9180:9180"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

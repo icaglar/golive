@@ -1,0 +1,33 @@
+# golive: Let's Encrypt ClusterIssuers for the NO-Cloudflare TLS mode (cert-manager issues certificates).
+# cert-manager itself must be installed first (Helm chart or Flux HelmRelease; check the cert-manager docs).
+# Replace __ACME_EMAIL__ (expiry notices go there). HTTP-01 is solved through the ingress class below, so the
+# domain's A/AAAA record must already point at the ingress load balancer (dns_records before tls).
+# Use letsencrypt-staging first (untrusted certs, generous limits); switch the Ingress annotation to
+# letsencrypt-prod once issuance works.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: __ACME_EMAIL__
+    privateKeySecretRef: {name: letsencrypt-staging-account-key}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: __ACME_EMAIL__
+    privateKeySecretRef: {name: letsencrypt-prod-account-key}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

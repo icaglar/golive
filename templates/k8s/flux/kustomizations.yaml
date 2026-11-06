@@ -1,0 +1,32 @@
+# golive Flux ordering: migrate first, app after. One pair per environment (replace __ENV__ with staging|prod
+# and __REPO__ with the GitRepository name that `flux bootstrap` created, usually flux-system).
+# Put the pair in the Flux path of that cluster (e.g. clusters/<cluster>/). Skip the pair's migrate half
+# (and delete dependsOn) when the app has no migrations.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: migrate-__ENV__
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./deploy/k8s/overlays/__ENV__/migrate
+  prune: true
+  force: true          # Jobs are immutable: recreate when the image tag changes
+  wait: true           # report Ready only after the Job completed
+  timeout: 10m
+  sourceRef: {kind: GitRepository, name: __REPO__}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: app-__ENV__
+  namespace: flux-system
+spec:
+  interval: 5m
+  dependsOn:
+    - name: migrate-__ENV__     # the Deployment rolls out only after the migration Job succeeded
+  path: ./deploy/k8s/overlays/__ENV__
+  prune: true
+  wait: true
+  timeout: 10m
+  sourceRef: {kind: GitRepository, name: __REPO__}

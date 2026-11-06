@@ -1,0 +1,48 @@
+{
+  "name": "golive",
+  "owner": {
+    "name": "İbrahim",
+    "url": "https://github.com/icaglar"
+  },
+  "metadata": {
+    "description": "golive: take an app from repo to production with the providers you choose, step by step, with confirmation before anything costly or destructive."
+  },
+  "plugins": [
+    {
+      "name": "golive",
+      "source": "./",
+      "description": "Takes an app from repo to production without the chores, with the providers you choose: domain (Porkbun, Namecheap, Cloudflare or any registrar), DNS (Cloudflare or your own), servers (Hetzner, DigitalOcean, Vultr, Linode, AWS Lightsail, Scaleway or an existing VPS), staging and prod on Docker Compose or Kubernetes, TLS, PostgreSQL/MySQL with encrypted backups, migration of an existing live app, transactional mail (Resend, Postmark, Mailgun, SES, Brevo), monitoring, CI/CD where production only changes through a confirmed release, and a legal checklist for your users' jurisdictions (GDPR, CCPA, LGPD, KVKK, ...). Shows a status board with a running cost total after every step and asks before anything that costs money or deletes infrastructure.",
+      "version": "1.0.0",
+      "author": {
+        "name": "İbrahim"
+      },
+      "license": "MIT",
+      "keywords": [
+        "cloudflare",
+        "deploy",
+        "dkim",
+        "dmarc",
+        "dns",
+        "domain",
+        "gdpr",
+        "github",
+        "go-live",
+        "grafana",
+        "hetzner",
+        "k3s",
+        "kubernetes",
+        "kvkk",
+        "monitoring",
+        "porkbun",
+        "postgresql",
+        "privacy",
+        "production",
+        "prometheus",
+        "resend",
+        "smtp",
+        "spf",
+        "staging"
+      ]
+    }
+  ]
+}

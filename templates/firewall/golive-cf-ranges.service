@@ -1,0 +1,13 @@
+# golive: compare Cloudflare's published IP ranges with the ones this server was set up with and ALERT on a change.
+# It never edits firewall rules by itself (a wrong automatic change could lock Cloudflare, or you, out).
+# Install: copy this file, golive-cf-ranges.timer and golive-cf-ranges.sh to /etc/systemd/system/ and /usr/local/sbin/
+# (golive-cf-ranges.sh mode 0755), then: systemctl daemon-reload && systemctl enable --now golive-cf-ranges.timer
+# firewall_rules.py must be at /opt/golive/firewall_rules.py (copy it from the plugin's scripts/).
+[Unit]
+Description=golive: check Cloudflare IP ranges for changes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/golive-cf-ranges.sh

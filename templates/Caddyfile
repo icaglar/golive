@@ -1,0 +1,107 @@
+# golive: Caddy reverse proxy behind Cloudflare (SSL mode Full (strict)).
+# Placeholders the tls skill replaces:
+#   __DOMAIN__          the bare domain, e.g. example.com
+#   __CANONICAL_HOST__  the host users should end up on: __DOMAIN__ (apex) or www.__DOMAIN__ (profile.app_shape.canonical_host)
+#   __ALT_HOST__        the OTHER one (www.__DOMAIN__ for apex canonical, __DOMAIN__ for www canonical); it redirects to canonical
+# Certificates are a Cloudflare Origin CA pair mounted at /etc/caddy/certs (include *.__DOMAIN__ so staging is covered).
+# An Origin CA certificate is trusted only by Cloudflare: every host here must be proxied (orange cloud).
+# One server runs one environment: keep the staging block on the staging server and the production block on the
+# production server (delete the other), unless layout is same-server, where both stay.
+# Always run `caddy validate --config /etc/caddy/Caddyfile` after editing (docker compose exec caddy caddy validate ...).
+
+{
+	# Real client IP: trust Cloudflare's ranges and read the visitor address from CF-Connecting-IP.
+	# Caddy 2.7+ syntax (verify with caddy validate). The list is Cloudflare's published ranges
+	# (https://www.cloudflare.com/ips); it changes rarely. templates/firewall/ alerts when it does:
+	# then regenerate this list with `python3 scripts/firewall_rules.py --format json-ranges`
+	# and reload Caddy.
+	servers {
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
+		metrics
+	}
+}
+
+(common) {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	encode zstd gzip
+	# JSON access logs on stdout (docker logs / Loki read them; the client IP is the real visitor)
+	log {
+		output stdout
+		format json
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+}
+
+# Optional: Authenticated Origin Pulls (only Cloudflare's client certificate may connect). Verify against the
+# Caddy and Cloudflare docs before use. Download Cloudflare's origin-pull CA to ./certs/cloudflare-origin-pull-ca.pem,
+# enable "Authenticated Origin Pulls" in Cloudflare (SSL/TLS > Origin Server), then replace the tls line in (common) with:
+#	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem {
+#		client_auth {
+#			mode require_and_verify
+#			trust_pool file {
+#				pem_file /etc/caddy/certs/cloudflare-origin-pull-ca.pem
+#			}
+#		}
+#	}
+# (older Caddy versions use `trusted_ca_cert_file <path>` instead of `trust_pool file`.)
+
+# Private metrics endpoint for Prometheus (compose.caddy.yaml publishes 9180 on the private IP only)
+http://:9180 {
+	metrics
+}
+
+# Non-canonical host redirects to the canonical one
+__ALT_HOST__ {
+	import common
+	redir https://__CANONICAL_HOST__{uri} permanent
+}
+
+__CANONICAL_HOST__ {
+	import common
+
+	# FastAPI (or any API) under /api
+	handle /api/* {
+		# Uploads: raise the body limit for the upload route only (default has no limit in Caddy; set one on purpose).
+		# request_body {
+		# 	max_size 50MB
+		# }
+		reverse_proxy api:8000
+	}
+
+	# Websockets: reverse_proxy upgrades them automatically. For long-lived sockets keep idle connections open:
+	# handle /ws/* {
+	# 	reverse_proxy api:8000 {
+	# 		flush_interval -1
+	# 		transport http {
+	# 			read_timeout 1h
+	# 		}
+	# 	}
+	# }
+	# Note: Cloudflare supports websockets on all plans but closes idle ones after ~100 s without traffic; send pings.
+
+	# SvelteKit (adapter-node) or any web frontend
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Staging: never indexed. Protect it with Cloudflare Access (dns skill) or basic auth (see Caddyfile.letsencrypt).
+staging.__DOMAIN__ {
+	import common
+	header X-Robots-Tag "noindex, nofollow"
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

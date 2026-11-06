@@ -1,0 +1,16 @@
+# golive: pull-based deploy for Docker Compose. Installed by the deploy skill:
+#   golive-pull.sh -> /usr/local/bin/golive-pull (0755); this file and the timer -> /etc/systemd/system/
+# /srv/app/.env on each server holds APP_ENV=staging|prod (and COMPOSE_FILE etc.).
+# The server follows the git tag golive-$APP_ENV, which only release.yml moves. Never main.
+# A failed run leaves the unit in "failed" state: alert on it (node_exporter systemd collector or OnFailure=).
+[Unit]
+Description=golive: deploy the released tag (golive-$APP_ENV) and restart changed containers
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=__DEPLOY_USER__
+WorkingDirectory=/srv/app
+EnvironmentFile=/srv/app/.env
+ExecStart=/usr/local/bin/golive-pull

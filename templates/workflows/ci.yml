@@ -1,0 +1,113 @@
+# golive CI: test + build (+ vulnerability scan) on every PR and push to main; on main, push images to GHCR
+# and release to staging.
+#
+# Action pinning: `uses:` lines below carry version tags for readability. The workflows skill replaces each
+# with the full 40-character commit SHA of that release (`uses: owner/action@<sha> # v4`), because tags can be
+# moved by the action's owner (supply-chain risk). templates/github/dependabot.yml enables Dependabot's
+# github-actions ecosystem, which opens weekly PRs that bump those SHAs and keep the version comment current.
+#
+# The workflows skill fills __TEST_COMMAND__ and the service matrix.
+#
+# STAGING: the `staging` job at the bottom exists only when environments.layout has a staging environment
+# (separate-servers or same-server). For a prod-only project the workflows skill DELETES that job; production
+# is then released only through release.yml (latest green ci run on main), after the user's yes.
+#
+# Required status check for branch protection is the job named `ci` (see templates/github/branch-protection.md).
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Trivy fails the build at this severity or worse. Override with a repository variable
+  # GOLIVE_TRIVY_SEVERITY, e.g. "HIGH,CRITICAL" (stricter) or "CRITICAL" (default).
+  TRIVY_SEVERITY: ${{ vars.GOLIVE_TRIVY_SEVERITY || 'CRITICAL' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: __TEST_COMMAND__
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {service: web, context: ./web}
+          - {service: api, context: ./api}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-${{ matrix.service }}" >> "$GITHUB_ENV"
+      # 1) build locally, 2) scan, 3) push only if the scan passed (and only on main).
+      - name: Build (local, for the scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          load: true
+          push: false
+          tags: scan/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: scan/${{ matrix.service }}:ci
+          severity: ${{ env.TRIVY_SEVERITY }}
+          exit-code: '1'
+          ignore-unfixed: true      # only fail on vulnerabilities that already have a fix
+          vuln-type: os,library
+          format: table
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+
+  # Single required check for branch protection: green only when test and build are green.
+  ci:
+    needs: [test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
+        run: |
+          [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.build.result }}" = "success" ] || { echo "ci failed"; exit 1; }
+
+  # STAGING-ONLY JOB: delete for prod-only projects (see header).
+  staging:
+    needs: [build, ci]
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      environment: staging
+      sha: ${{ github.sha }}

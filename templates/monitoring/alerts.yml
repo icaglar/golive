@@ -1,0 +1,70 @@
+# golive: alert rules. Thresholds are starting points; tune after a week of data.
+groups:
+  - name: golive
+    rules:
+      - alert: SiteDown
+        expr: probe_success{job="blackbox_http"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "{{ $labels.instance }} is not answering"}
+      - alert: InstanceDown
+        expr: up == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations: {summary: "{{ $labels.job }} on {{ $labels.instance }} is down"}
+      - alert: DiskAlmostFull
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 0.85
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }} {{ $labels.mountpoint }} is over 85% full"}
+      - alert: MemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }} memory over 90%"}
+      - alert: CpuHigh
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }} CPU over 90% for 15 minutes"}
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "PostgreSQL on {{ $labels.instance }} is down"}
+      - alert: PostgresReplicationLag
+        # metric name differs between postgres_exporter versions; check /metrics on the replica's exporter
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Replica {{ $labels.instance }} is {{ $value }}s behind"}
+      - alert: BackupTooOld
+        # written by the backup job through node_exporter's textfile collector
+        expr: time() - golive_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "No successful backup on {{ $labels.instance }} for over 26 hours"}
+      - alert: Watchdog
+        # Always firing ON PURPOSE. Alertmanager routes it to the external dead-man's switch (receiver "deadman");
+        # if the heartbeat stops arriving, that service alerts you that the monitoring itself is down.
+        expr: vector(1)
+        labels: {severity: none}
+        annotations: {summary: "Watchdog heartbeat: monitoring pipeline is alive"}
+      - alert: RebootRequired
+        # node_reboot_required is written by textfile/reboot-required.sh (unattended-upgrades reboots at the configured window; this fires when that did not happen)
+        expr: node_reboot_required == 1
+        for: 36h
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }} has needed a reboot for over 36 hours (automatic reboot window not working?)"}
+      - alert: PullFailed
+        # golive_pull_last_success_timestamp_seconds is written by the pull unit (templates/systemd) after each successful run
+        expr: time() - golive_pull_last_success_timestamp_seconds > 3600
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }}: no successful deploy pull for over an hour (git, registry or migration failing)"}
+      - alert: CloudflareRangesChanged
+        # written weekly by templates/firewall/golive-cf-ranges.sh; apply with the command in that script, then run it with --accept
+        expr: golive_cloudflare_ranges_changed == 1
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.instance }}: Cloudflare IP ranges changed; update the firewall and Caddy trusted_proxies"}

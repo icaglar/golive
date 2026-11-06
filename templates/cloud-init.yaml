@@ -1,0 +1,111 @@
+#cloud-config
+# golive: Hetzner Cloud bootstrap for Ubuntu 24.04.
+# The server skill replaces these placeholders before use:
+#   __DEPLOY_USER__    deploy user name (default deploy)
+#   __SSH_PUBLIC_KEY__ public key that may log in
+#   __SSH_PORT__       sshd port (default 22); allowed in ufw instead of "OpenSSH"
+#   __PRIVATE_RANGE__  private network CIDR (default 10.0.0.0/16); the private services' ports are
+#                      opened in ufw from this range only (5432 3306 9100 9187 9104 8080 9180 9200)
+#   __REBOOT_TIME__    automatic reboot window for kernel updates, HH:MM (default 04:00)
+# Result: a sudo-capable deploy user with key-only SSH, root login disabled, Docker with log
+# rotation, ufw, fail2ban, unattended security upgrades with a reboot window, and a swap file
+# on small servers (2 GB when RAM <= 8 GB and no swap exists).
+
+groups:
+  - docker
+
+users:
+  - name: __DEPLOY_USER__
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "__SSH_PUBLIC_KEY__"
+
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+
+write_files:
+  # 00- so it is read before 50-cloud-init.conf: sshd keeps the first value it reads.
+  - path: /etc/ssh/sshd_config.d/00-golive.conf
+    permissions: "0644"
+    content: |
+      Port __SSH_PORT__
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "5" }
+      }
+  - path: /etc/fail2ban/jail.d/sshd.local
+    permissions: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      maxretry = 5
+      findtime = 10m
+      bantime = 1h
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+  - path: /etc/apt/apt.conf.d/52golive-unattended
+    permissions: "0644"
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "__REBOOT_TIME__";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+  - path: /usr/local/sbin/golive-swap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # 2 GB swap file when RAM <= 8 GB and the server has no swap yet. Idempotent.
+      set -eu
+      [ -n "$(swapon --show --noheadings)" ] && exit 0
+      [ -e /swapfile ] && exit 0
+      mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+      [ "$mem_kb" -le 8388608 ] || exit 0
+      fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      echo 'vm.swappiness=10' > /etc/sysctl.d/99-golive-swap.conf
+      sysctl -p /etc/sysctl.d/99-golive-swap.conf
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow __SSH_PORT__/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  # Private services (DB, exporters, cadvisor, Caddy metrics, app metrics): private network only.
+  - for p in 5432 3306 9100 9187 9104 8080 9180 9200; do ufw allow from __PRIVATE_RANGE__ to any port $p proto tcp; done
+  - ufw --force enable
+  - systemctl enable --now fail2ban
+  - /usr/local/sbin/golive-swap.sh
+  # Ubuntu 24.04 starts sshd through ssh.socket, which ignores Port in sshd_config: use the service for a custom port.
+  - 'sshd -t && if [ "__SSH_PORT__" != "22" ]; then systemctl disable --now ssh.socket 2>/dev/null || true; systemctl enable --now ssh; fi'
+  - systemctl restart ssh
+  # Empty on purpose: the deploy step clones the app repo into it.
+  - mkdir -p /srv/app /srv/backups && chown __DEPLOY_USER__:__DEPLOY_USER__ /srv/app /srv/backups
+
+final_message: "golive bootstrap finished after $UPTIME seconds"

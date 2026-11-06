@@ -1,0 +1,41 @@
+# golive: Dependabot keeps dependencies and pinned GitHub Actions SHAs current. Copy to .github/dependabot.yml.
+# Weekly PRs; ci must pass (and the user decides) before anything merges. Merging to main only reaches
+# staging; production changes only through the release workflow.
+version: 2
+updates:
+  - package-ecosystem: github-actions    # bumps the SHA-pinned `uses:` lines and their version comments
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}
+
+  - package-ecosystem: docker            # base images in Dockerfiles (add one entry per directory with a Dockerfile)
+    directory: /
+    schedule: {interval: weekly}
+
+  # App ecosystems: uncomment the ones the project uses (the workflows skill does this from the detected stack).
+  # - package-ecosystem: npm
+  #   directory: /
+  #   schedule: {interval: weekly}
+  #   groups: {npm-minor-patch: {update-types: [minor, patch]}}
+  # - package-ecosystem: pip
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: gomod
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: maven
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: gradle
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: cargo
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: bundler
+  #   directory: /
+  #   schedule: {interval: weekly}
+  # - package-ecosystem: composer
+  #   directory: /
+  #   schedule: {interval: weekly}

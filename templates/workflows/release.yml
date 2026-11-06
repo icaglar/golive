@@ -1,0 +1,114 @@
+# golive release: points an environment at an already built commit (images built by ci as :sha-<commit>).
+# Staging: called by ci after every green build on main (only when the project has a staging environment).
+# Production: only by hand (workflow_dispatch), which golive's release skill triggers after you say yes.
+# Prod-only projects: just dispatch with environment=production and the sha of the latest green ci run on main.
+#
+# Repository variable GOLIVE_RUNTIME = compose | k8s decides how the release happens:
+#   compose: retag images :staging / :prod AND move the git tag golive-staging / golive-prod to the commit.
+#            Each server's golive-pull unit follows its tag (never main), so only this workflow changes what runs.
+#            (If tag rulesets block force-updates of golive-*, allow github-actions to bypass them.)
+#   k8s:     pin sha-<commit> in deploy/k8s/overlays/<env>/kustomization.yaml (and .../migrate/) and commit; Flux applies.
+#            If main is protected, either let github-actions bypass branch protection, or point Flux at a branch and
+#            set the repository variable GOLIVE_DEPLOY_BRANCH to it.
+#
+# The run name carries the environment and commit so the release skill can read "what runs where" from run history.
+name: release
+run-name: release ${{ inputs.environment }} ${{ inputs.sha }}
+on:
+  workflow_call:
+    inputs:
+      environment: {type: string, required: true}
+      sha: {type: string, required: true}
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      sha:
+        description: Commit SHA already built by ci (the release skill fills it in)
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  SERVICES: "web api"   # filled by the workflows skill
+  # Action pinning: see the header of ci.yml (the workflows skill pins `uses:` to commit SHAs).
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # environment: ${{ inputs.environment }}   # golive enables this only where GitHub supports protection rules
+    steps:
+      - name: Target
+        id: t
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          case "$ENVIRONMENT" in
+            production) echo "env=prod" >> "$GITHUB_OUTPUT" ;;
+            staging)    echo "env=staging" >> "$GITHUB_OUTPUT" ;;
+            *) echo "unknown environment: $ENVIRONMENT" >&2; exit 1 ;;
+          esac
+          echo "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "sha must be a full 40-character commit SHA" >&2; exit 1; }
+
+      # ---------- compose ----------
+      - uses: actions/checkout@v4
+        if: vars.GOLIVE_RUNTIME != 'k8s'
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: docker/setup-buildx-action@v3
+        if: vars.GOLIVE_RUNTIME != 'k8s'
+      - uses: docker/login-action@v3
+        if: vars.GOLIVE_RUNTIME != 'k8s'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote images (compose)
+        if: vars.GOLIVE_RUNTIME != 'k8s'
+        run: |
+          for s in $SERVICES; do
+            img="ghcr.io/${GITHUB_REPOSITORY,,}-$s"
+            docker buildx imagetools create -t "$img:${{ steps.t.outputs.env }}" "$img:sha-${{ inputs.sha }}"
+          done
+
+      - name: Move the release tag (compose)
+        if: vars.GOLIVE_RUNTIME != 'k8s'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "golive-${{ steps.t.outputs.env }}" "${{ inputs.sha }}"
+          git push --force origin "refs/tags/golive-${{ steps.t.outputs.env }}"
+
+      # ---------- k8s ----------
+      - uses: actions/checkout@v4
+        if: vars.GOLIVE_RUNTIME == 'k8s'
+        with:
+          ref: ${{ vars.GOLIVE_DEPLOY_BRANCH || 'main' }}
+
+      - name: Pin sha-<commit> in the overlay (k8s)
+        if: vars.GOLIVE_RUNTIME == 'k8s'
+        run: |
+          # yq (mikefarah) is preinstalled on GitHub's ubuntu runners.
+          for f in "deploy/k8s/overlays/${{ steps.t.outputs.env }}/kustomization.yaml" \
+                   "deploy/k8s/overlays/${{ steps.t.outputs.env }}/migrate/kustomization.yaml"; do
+            [ -f "$f" ] && yq -i '.images[].newTag = "sha-${{ inputs.sha }}"' "$f"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release: ${{ steps.t.outputs.env }} -> ${{ inputs.sha }}" || echo "already at this commit"
+          git pull --rebase --autostash origin "${{ vars.GOLIVE_DEPLOY_BRANCH || 'main' }}"
+          git push origin "HEAD:${{ vars.GOLIVE_DEPLOY_BRANCH || 'main' }}"
+
+      - name: Summary
+        run: echo "Released ${{ inputs.sha }} to ${{ inputs.environment }}" >> "$GITHUB_STEP_SUMMARY"

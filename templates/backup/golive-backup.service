@@ -1,0 +1,12 @@
+# golive: install to /etc/systemd/system/ with golive-backup.timer and /usr/local/sbin/golive-backup.sh
+[Unit]
+Description=golive: encrypted backup and heartbeat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Optional: Environment=RESTIC_ENV_FILE=/etc/golive/restic.env   Environment=STANZA=__PROJECT__
+ExecStart=/usr/local/sbin/golive-backup.sh
+Nice=10
+IOSchedulingClass=idle

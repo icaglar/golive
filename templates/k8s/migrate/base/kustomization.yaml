@@ -1,0 +1,5 @@
+# golive migrate base: only the migration Job. Overlays at overlays/<env>/migrate/ pin the image tag.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - migrate-job.yaml

@@ -1,0 +1,9 @@
+# golive overlay: prod migration Job. release.yml pins the same sha-<commit> here as in ../kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - ../../../migrate/base
+images:
+  - name: ghcr.io/OWNER/REPO-web
+    newTag: sha-PLACEHOLDER

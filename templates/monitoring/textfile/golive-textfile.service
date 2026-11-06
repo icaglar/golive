@@ -1,0 +1,6 @@
+[Unit]
+Description=golive: write node_exporter textfile metrics (reboot required)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/golive-reboot-required.sh

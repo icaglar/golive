@@ -1,0 +1,47 @@
+# golive: monitoring server (mon-1). Prometheus + Alertmanager + Grafana + Blackbox, behind Caddy.
+# Pin each image to its current release tag before the first deploy (the monitoring skill does this).
+# Nothing here publishes ports except Caddy; Grafana is reached at https://grafana.<domain> through Cloudflare Access.
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+  alertmanager:
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./secrets:/etc/alertmanager/secrets:ro
+  blackbox:
+    image: prom/blackbox-exporter:latest
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana-oss:latest
+    restart: unless-stopped
+    env_file: .env            # GF_SECURITY_ADMIN_PASSWORD generated on the server
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.__DOMAIN__
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  caddy_data:

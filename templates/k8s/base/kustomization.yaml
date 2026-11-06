@@ -1,0 +1,7 @@
+# golive base: one Deployment + Service + Ingress per app service. Copy the web block for more services.
+# The migrate Job is NOT part of this base: it lives in ../migrate/base and is applied by its own Flux
+# Kustomization BEFORE this one (see ../flux/kustomizations.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - web.yaml

@@ -1,0 +1,43 @@
+# golive: STAGING override. Layered over compose.yaml by setting, in this server's /srv/app/.env:
+#   APP_ENV=staging
+#   COMPOSE_FILE=compose.yaml:compose.staging.yaml
+# (docker compose reads COMPOSE_FILE from .env, so the pull unit and every manual `docker compose` call use both files.)
+# Staging runs its own Postgres in a container: no ports are published, only the app network reaches it.
+# POSTGRES_PASSWORD / DATABASE_URL are generated on the server in .env (database skill); never in git.
+# Service names (api, web, worker) must match compose.yaml; delete the ones the app does not have.
+# Memory limits keep one runaway container from triggering the kernel OOM killer on a small box; tune after a week of data.
+# For Postgres on MySQL, swap the image/healthcheck (mysqladmin ping) and the data path (/var/lib/mysql).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    mem_limit: 512m
+    # no `ports:` on purpose
+  api:
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+  web:
+    mem_limit: 384m
+  # worker:
+  #   mem_limit: 384m
+  # migrate:                       # one-shot service run by the pull unit before `up`
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+volumes:
+  db_data:

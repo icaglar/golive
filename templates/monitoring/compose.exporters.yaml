@@ -1,0 +1,37 @@
+# golive: exporters for every app/DB server. Ports bind to the PRIVATE IP only (__PRIVATE_IP__),
+# so only servers on golive-net (the monitoring server) can scrape them. ufw allows these ports from
+# the private range only (cloud-init/bootstrap). Pin each image to its current release tag (monitoring skill).
+# node-exporter listens on __PRIVATE_IP__:9100 only (network_mode host, so it must NOT bind 0.0.0.0).
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=__PRIVATE_IP__:9100
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - /:/host:ro,rslave
+      # backup.prom, cloudflare.prom, reboot.prom, pull.prom ... are written here by golive scripts
+      - /var/lib/node_exporter/textfile:/textfile:ro
+  cadvisor:                       # app servers only
+    image: gcr.io/cadvisor/cadvisor:latest
+    restart: unless-stopped
+    ports: ["__PRIVATE_IP__:8080:8080"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+  # postgres-exporter:            # DB server only; DATA_SOURCE_NAME in the server .env (monitoring role, read-only)
+  #   image: quay.io/prometheuscommunity/postgres-exporter:latest
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   ports: ["__PRIVATE_IP__:9187:9187"]
+  # mysqld-exporter:              # MySQL/MariaDB server only; DATA_SOURCE_NAME or a my.cnf with a monitoring user
+  #   image: prom/mysqld-exporter:latest
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   ports: ["__PRIVATE_IP__:9104:9104"]

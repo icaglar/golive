@@ -1,0 +1,123 @@
+# golive state file (schema 1.0). Managed by the golive plugin; safe to commit.
+# Never put secrets here: record only WHERE a secret lives (env var name, password manager, server .env).
+version: 2
+project: __PROJECT__
+updated: __DATE__
+
+profile:                      # answered in init's second form
+  data_residency: null        # eu | us | uk | tr | any | <region>; drives provider regions
+  budget: balanced            # minimal | balanced | high-availability; drives defaults (replica, mon server, staging server)
+  availability: {rpo: null, rto: null}   # acceptable data loss / downtime, e.g. "1h", "4h"
+  replaces_live_app: false    # true -> the migrate step runs
+  app_shape: {uploads: false, workers: false, websockets: false, custom_domains: false, canonical_host: apex}   # canonical_host: apex | www
+  accounts: {owner: company, billing: null, team: []}   # owner: company | personal
+  github: {owner_type: personal, plan: free}            # owner_type: personal | org; plan: free | pro | team | enterprise
+
+domain:
+  name: __DOMAIN__            # apex, e.g. example.com
+  registrar: porkbun          # porkbun (default) | namecheap | cloudflare | godaddy | local-tr (.com.tr) | <any other registrar>
+  owned: false                # true once bought (or if it already existed)
+  dns_provider: cloudflare    # cloudflare (default) | registrar | hetzner | route53 | <other>; not cloudflare -> dns_records runs before tls
+
+runtime: compose              # compose | hetzner-k3s | kube-hetzner | managed-k8s | k3sup (environments step)
+environments:                 # filled by the environments step
+  layout: separate-servers    # separate-servers | same-server | prod-only
+  staging: {host: staging.__DOMAIN__, image_tag: staging, protection: cloudflare-access}   # protection: cloudflare-access | basic-auth | none
+  prod: {host: __DOMAIN__, image_tag: prod}
+
+database:                     # filled by the database step
+  engine: postgresql          # postgresql | mysql
+  staging: container          # container | dedicated | operator
+  prod: dedicated+replica     # dedicated+replica | dedicated | container | operator
+  backups: pitr-object-storage
+  offsite: {provider: null, encrypted: true}   # encrypted copy at a second provider
+  restore_drill: null         # date and duration of the last tested restore
+
+monitoring:                   # filled by the monitoring step
+  where: mon-server           # mon-server | kube-prometheus-stack | grafana-cloud | app-server
+  alerts: telegram            # telegram | email | both
+  logs: false
+  deadman: null               # WHERE the external heartbeat URL lives (not the URL itself)
+
+app:
+  stack: ""                   # e.g. fastapi + sveltekit + postgres, docker compose
+  hosts: [__DOMAIN__, www.__DOMAIN__]
+  upstreams:                  # used by the Caddyfile
+    api: "api:8000"
+    web: "web:3000"
+
+server_defaults:              # shared by every entry in `servers`
+  provider: hetzner           # hetzner (default) | digitalocean | vultr | linode | lightsail | scaleway | existing
+  image: ubuntu-24.04
+  deploy_user: deploy
+  ssh_key: null               # SSH key name in the provider project
+  ssh_port: 22
+  ssh_from: null              # CIDR allowed to SSH, e.g. 203.0.113.7/32
+  firewall: golive-web
+  private_network: golive-net
+  private_range: 10.0.0.0/16
+  compose_file: compose.yaml  # at the repo root, cloned to /srv/app
+
+servers:                      # one entry per machine; role + env decide what runs there
+  # type: picked from the provider's server-type list and confirmed with the price; location e.g. fsn1;
+  # ipv6: the server address <prefix>::1, not the /64 the provider reports; rdns e.g. app.example.com
+  app-prod: {role: app, env: prod, type: null, location: null, ipv4: null, ipv6: null, private_ip: null, rdns: null}
+  # app-staging: {role: app, env: staging, type: null, location: null, ipv4: null, ipv6: null, private_ip: null, rdns: null}
+  # db-1: {role: db-primary, env: prod, type: null, location: null, ipv4: null, ipv6: null, private_ip: null, rdns: null}
+  # db-2: {role: db-replica, env: prod, type: null, location: null, ipv4: null, ipv6: null, private_ip: null, rdns: null}
+  # mon-1: {role: monitoring, env: shared, type: null, location: null, ipv4: null, ipv6: null, private_ip: null, rdns: null}
+
+mail:
+  provider: resend            # resend (default) | postmark | mailgun | ses | brevo | workspace | own-smtp
+  region: eu-west-1
+  send_subdomain: send        # from skills/mail/providers.md for the chosen provider
+  dkim_selector: resend       # Resend: resend; others: the selector the provider gives
+  from: "noreply@__DOMAIN__"
+  inbound: cloudflare-email-routing   # cloudflare-email-routing | registrar-forwarding | mailbox-provider | none
+  routes: [info, dmarc]       # local parts forwarded to forward_to
+  forward_to: null            # destination inbox (the user verifies it once); asked in the mail step
+  existing_mailbox: null      # e.g. google-workspace: then inbound stays there, no Email Routing
+  dmarc_policy: none          # none -> quarantine after clean reports
+
+legal:                        # filled by the legal step
+  company_country: null       # where the data controller is established
+  user_regions: []            # e.g. [eu, uk, us, ca, br, tr]
+  collects_personal_data: true
+  cookies_beyond_essential: false
+  marketing_messages: false   # consent rules: GDPR/ePrivacy, PECR, CAN-SPAM, CASL, İYS
+  ecommerce: false            # consumer law: withdrawal rights, seller identity
+  children: false
+
+secrets:                      # locations only, never values
+  hetzner: "hcloud context (or HCLOUD_TOKEN env var)"
+  cloudflare: "OAuth via /mcp"
+  porkbun: "OAuth via /mcp"
+  mail: "provider dashboard; app key in the server .env (pasted by the user)"
+  github: "plugin option github_token (secure storage) and/or gh auth; server deploy key in ~/.ssh/deploy_key"
+
+costs: []                     # appended by every billable step, e.g.
+                              # - {item: "app-prod cx33 fsn1", monthly: 0.0, currency: EUR, step: server}
+
+# status: pending | in_progress | done | skipped | blocked
+# owner: claude | user (a human step: Claude prepares it, the user does it)
+# envs: only on per-environment steps; the step is done only when every env is done or skipped
+steps:
+  domain:        {status: pending, owner: claude, note: ""}
+  nameservers:   {status: pending, owner: claude, note: ""}
+  environments:  {status: pending, owner: claude, note: ""}
+  server:        {status: pending, owner: claude, note: "", envs: {staging: pending, prod: pending}}
+  cluster:       {status: pending, owner: claude, note: ""}
+  database:      {status: pending, owner: claude, note: ""}
+  deploy:        {status: pending, owner: claude, note: "", envs: {staging: pending, prod: pending}}
+  tls:           {status: pending, owner: claude, note: "", envs: {staging: pending, prod: pending}}
+  dns_records:   {status: pending, owner: claude, note: "", envs: {staging: pending, prod: pending}}
+  ci_cd:         {status: pending, owner: claude, note: ""}
+  migrate:       {status: pending, owner: claude, note: ""}
+  mail_send:     {status: pending, owner: claude, note: ""}
+  mail_inbound:  {status: pending, owner: claude, note: ""}
+  app_config:    {status: pending, owner: claude, note: ""}
+  ops:           {status: pending, owner: claude, note: ""}
+  monitoring:    {status: pending, owner: claude, note: ""}
+  legal:         {status: pending, owner: claude, note: ""}
+  launch:        {status: pending, owner: claude, note: ""}
+  audit:         {status: pending, owner: claude, note: ""}
